@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>MB Design — Walk-around AR</title>
+<style>
+  body { margin:0; overflow:hidden; font-family:system-ui,sans-serif; }
+  #ui  { position:fixed; top:0; left:0; right:0; z-index:10; text-align:center;
+         padding:10px; background:rgba(0,0,0,.55); color:#fff; font-size:15px; }
+</style>
+<script type="importmap">
+{ "imports": {
+    "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+} }
+</script>
+</head>
+<body>
+<div id="ui"><span id="msg">Loading…</span></div>
+
+<script type="module">
+import * as THREE from 'three';
+import { ARButton } from 'three/addons/webxr/ARButton.js';
+
+// WebXR world units are METERS — no marker-width trick needed.
+const IN  = 0.0254;      // inches -> meters
+const GAP = 0.05;        // 5 cm between boxes in the row
+const msg = document.getElementById('msg');
+
+let renderer, scene, camera, reticle;
+let hitTestSource = null, hitTestRequested = false;
+let layoutGroup = null, boxes = null;
+
+init();
+
+async function init() {
+  // 1) device capability
+  if (!navigator.xr || !(navigator.xr.isSessionSupported &&
+        await navigator.xr.isSessionSupported('immersive-ar'))) {
+    msg.textContent = 'WebXR AR not available. Use Chrome on an ARCore-capable Android device.';
+    return;
+  }
+  // 2) data
+  try {
+    const res = await fetch('boxes.json?ts=' + Date.now());
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    boxes = await res.json();
+  } catch (e) { msg.textContent = 'Could not load boxes.json: ' + e.message; return; }
+
+  // 3) scene
+  scene  = new THREE.Scene();
+  camera = new THREE.PerspectiveCamera(70, innerWidth / innerHeight, 0.01, 40);
+  scene.add(new THREE.HemisphereLight(0xffffff, 0xbbbbbb, 1.0));
+  const dir = new THREE.DirectionalLight(0xffffff, 0.6);
+  dir.position.set(1, 3, 2);
+  scene.add(dir);
+
+  renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+  renderer.setPixelRatio(devicePixelRatio);
+  renderer.setSize(innerWidth, innerHeight);
+  renderer.xr.enabled = true;
+  document.body.appendChild(renderer.domElement);
+
+  document.body.appendChild(ARButton.createButton(renderer, {
+    requiredFeatures: ['hit-test'],
+    optionalFeatures: ['dom-overlay', 'light-estimation'],
+    domOverlay: { root: document.body }
+  }));
+
+  // reticle that snaps to detected surfaces
+  const ring = new THREE.RingGeometry(0.07, 0.09, 32).rotateX(-Math.PI / 2);
+  reticle = new THREE.Mesh(ring, new THREE.MeshBasicMaterial({ color: 0x00ff88 }));
+  reticle.matrixAutoUpdate = false;
+  reticle.visible = false;
+  scene.add(reticle);
+
+  // the whole set of boxes, arranged in a row, hidden until placed
+  layoutGroup = buildLayout(boxes);
+  layoutGroup.visible = false;
+  scene.add(layoutGroup);
+
+  // tap to (re)place the set at the reticle
+  const controller = renderer.xr.getController(0);
+  controller.addEventListener('select', () => {
+    if (reticle.visible) {
+      layoutGroup.position.setFromMatrixPosition(reticle.matrix);
+      layoutGroup.visible = true;
+      msg.textContent = `${boxes.length} boxes placed — walk around. Tap again to move.`;
+    }
+  });
+  scene.add(controller);
+
+  renderer.xr.addEventListener('sessionstart', () =>
+    msg.textContent = 'Move the tablet slowly to find a surface, then tap to place.');
+  renderer.xr.addEventListener('sessionend', () => {
+    msg.textContent = 'Tap START AR to begin.';
+    hitTestSource = null; hitTestRequested = false;
+  });
+
+  addEventListener('resize', () => {
+    camera.aspect = innerWidth / innerHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(innerWidth, innerHeight);
+  });
+
+  renderer.setAnimationLoop(render);
+  msg.textContent = `Ready (${boxes.length} boxes) — tap START AR at the bottom.`;
+}
+
+function buildLayout(list) {
+  const group = new THREE.Group();
+  let total = 0;
+  list.forEach(b => total += b.width_in * IN);
+  total += GAP * (list.length - 1);
+  let x = -total / 2;                      // center the row on the tap point
+  list.forEach(b => {
+    const w = b.width_in * IN, d = b.depth_in * IN, h = b.height_in * IN;
+    const mesh = new THREE.Mesh(
+      new THREE.BoxGeometry(w, h, d),
+      new THREE.MeshStandardMaterial({ color: b.color || '#C7A87A', roughness: 0.85, metalness: 0 })
+    );
+    mesh.position.set(x + w / 2, h / 2, 0); // base sits on the surface
+    group.add(mesh);
+    x += w + GAP;
+  });
+  return group;
+}
+
+function render(timestamp, frame) {
+  if (frame) {
+    const refSpace = renderer.xr.getReferenceSpace();
+    const session  = renderer.xr.getSession();
+    if (!hitTestRequested) {
+      session.requestReferenceSpace('viewer').then(vs =>
+        session.requestHitTestSource({ space: vs }).then(src => hitTestSource = src));
+      hitTestRequested = true;
+    }
+    if (hitTestSource) {
+      const hits = frame.getHitTestResults(hitTestSource);
+      if (hits.length) {
+        reticle.visible = true;
+        reticle.matrix.fromArray(hits[0].getPose(refSpace).transform.matrix);
+      } else {
+        reticle.visible = false;
+      }
+    }
+  }
+  renderer.render(scene, camera);
+}
+</script>
+</body>
+</html>
