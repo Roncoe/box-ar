@@ -1,0 +1,5 @@
+[
+  { "value": 1, "label": "Box 1", "width_in": 8, "depth_in": 8, "height_in": 12, "color": "#C7A87A" },
+  { "value": 2, "label": "Box 2", "width_in": 8, "depth_in": 8, "height_in": 12, "color": "#9DB0C7" },
+  { "value": 3, "label": "Box 3", "width_in": 8, "depth_in": 8, "height_in": 12, "color": "#B7C79D" }
+]
