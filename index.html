@@ -35,7 +35,9 @@
     scene.setAttribute('embedded', '');
     scene.setAttribute('vr-mode-ui', 'enabled: false');
     scene.setAttribute('renderer', 'logarithmicDepthBuffer: true; colorManagement: true;');
-    scene.setAttribute('arjs', 'sourceType: webcam; detectionMode: mono_and_matrix; matrixCodeType: 4x4_BCH_13_9_3; debugUIEnabled: false;');
+    // Higher sourceWidth/Height = more pixels on the marker = detection from much farther.
+    // 1280x960 is a good balance; push to 1920x1440 for more range (costs some FPS on older phones).
+    scene.setAttribute('arjs', 'sourceType: webcam; sourceWidth: 1280; sourceHeight: 960; displayWidth: 1280; displayHeight: 960; detectionMode: mono_and_matrix; matrixCodeType: 4x4_BCH_13_9_3; debugUIEnabled: false;');
 
     const amb = document.createElement('a-light');
     amb.setAttribute('type', 'ambient'); amb.setAttribute('intensity', '0.9');
